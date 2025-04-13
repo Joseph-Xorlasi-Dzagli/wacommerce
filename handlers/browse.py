@@ -26,6 +26,7 @@ def handle_browse_catalog(user_id, category=None, offset=0):
     if not category:
         # Show categories first
         categories = get_all_categories()
+        categories = sorted(categories, key=lambda x: x.lower())
         
         if not categories:
             # If categories couldn't be fetched, refresh product details
@@ -36,8 +37,78 @@ def handle_browse_catalog(user_id, category=None, offset=0):
                 send_text_message(user_id, "Sorry, I couldn't fetch our product categories at the moment. Please try again later.")
                 return
         
-        # If we have too many categories, use a list message
-        if len(categories) > 3:
+        # If we have too many categories (more than 9), organize them into three sections
+        if len(categories) > 9:
+            # Distribute categories across three sections
+            top_picks = categories[:len(categories)//3]
+            trending_now = categories[len(categories)//3:2*len(categories)//3]
+            explore_more = categories[2*len(categories)//3:]
+            
+            # Create sections for the list message
+            sections = []
+            
+            # Add Top Picks section
+            top_rows = []
+            for cat in top_picks:
+                top_rows.append({
+                    "id": f"cat_{cat}",
+                    "title": cat.title(),
+                    "description": f"Browse {cat.lower()} products"
+                })
+            
+            if top_rows:
+                first_letter = top_picks[0][0].upper()
+                last_letter = top_picks[-1][0].upper()
+                sections.append({
+                    "title": f"Categories {first_letter} - {last_letter}",
+                    "rows": top_rows
+                })
+            
+            # Add Trending Now section
+            trending_rows = []
+            for cat in trending_now:
+                trending_rows.append({
+                    "id": f"cat_{cat}",
+                    "title": cat.title(),
+                    "description": f"Browse {cat.lower()} products"
+                })
+            
+            if trending_rows:
+                first_letter = trending_now[0][0].upper()
+                last_letter = trending_now[-1][0].upper()
+                sections.append({
+                    "title": f"Categories {first_letter} - {last_letter}",
+                    "rows": trending_rows
+                })
+            
+            # Add Explore More section
+            explore_rows = []
+            for cat in explore_more:
+                explore_rows.append({
+                    "id": f"cat_{cat}",
+                    "title": cat.title(),
+                    "description": f"Browse {cat.lower()} products"
+                })
+            
+            if explore_rows:
+                first_letter = explore_more[0][0].upper()
+                last_letter = explore_more[-1][0].upper()
+                sections.append({
+                    "title": f"Categories {first_letter} - {last_letter}",
+                    "rows": explore_rows
+                })
+            
+            send_list_message(
+                user_id,
+                "Product Categories",
+                "Browse our product categories:",
+                "View Categories",
+                sections
+            )
+
+
+        else:
+            # For fewer categories, use the original list approach
             rows = []
             for category in categories:
                 rows.append({
@@ -57,24 +128,6 @@ def handle_browse_catalog(user_id, category=None, offset=0):
                 "Browse our product categories:",
                 "View Categories",
                 sections
-            )
-        else:
-            # For few categories, use buttons
-            buttons = []
-            for category in categories:
-                buttons.append({
-                    "type": "reply", 
-                    "reply": {
-                        "id": f"cat_{category}", 
-                        "title": category.title()
-                    }
-                })
-            
-            send_button_message(
-                user_id,
-                "Product Categories",
-                "Choose a category to browse our products:",
-                buttons
             )
     else:
         # Show products in the selected category
@@ -130,7 +183,7 @@ def handle_browse_catalog(user_id, category=None, offset=0):
                 "What would you like to do next?",
                 buttons
             )
-
+            
 def send_product_carousel_with_more_button(user_id, products, header_text, recipient_name, category):
     """Send a product carousel with a 'See more like this' option"""
     # Get the total products and current offset from context
