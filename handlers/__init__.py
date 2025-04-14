@@ -91,6 +91,7 @@ interaction_handlers = {
     # "shipping_location": lambda user_id: handle_shipping_selection(user_id, "shipping_location"),
     "shipping_new_address": lambda user_id: handle_shipping_selection(user_id, "shipping_new_address"),
     "shipping_location": lambda user_id: handle_shipping_selection(user_id, "shipping_location"),
+    "shipping_pickup": lambda user_id: handle_shipping_selection(user_id, "shipping_pickup"),
 
 
 

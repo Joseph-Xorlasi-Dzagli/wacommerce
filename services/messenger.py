@@ -58,7 +58,6 @@ def send_button_message(recipient_id, header_text, body_text, buttons):
     }
     return send_whatsapp_message(recipient_id, message_data)
 
-
 def send_location_request_message(recipient_id, body_text):
     """Send an interactive location request message to get user's location"""
     message_data = {
@@ -340,3 +339,52 @@ def send_order_status_update(recipient_id, order_id, status, tracking_number=Non
         template_name = "order_status_update"
     
     return send_template_message(recipient_id, template_name, "en_US", components)
+
+def send_location_message(recipient_id, latitude, longitude, name=None, address=None):
+    """Send a location message with coordinates and optional name/address"""
+    message_data = {
+        "type": "location",
+        "location": {
+            "latitude": latitude,
+            "longitude": longitude
+        }
+    }
+    
+    # Add name and address if provided
+    if name:
+        message_data["location"]["name"] = name
+    
+    if address:
+        message_data["location"]["address"] = address
+    
+    return send_whatsapp_message(recipient_id, message_data)
+
+def send_payment_link_message(user_id, order_id, network, phone_number, payment_url):
+    """Send a message with a payment link button using Interactive CTA URL"""
+    # First send the informational text
+    info_message = (
+        # f"Thank you. Your payment will be processed through your {network} mobile money account {phone_number}.\n\n"
+        f"Please click the button below to receive a prompt on your phone to complete your payment for Order #{order_id}."
+    )
+
+    # send_text_message(user_id, info_message)
+    
+    # Create the interactive CTA URL message
+    message_data = {
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {
+                "text": info_message
+            },
+            "action": {
+                "name": "cta_url",
+                "parameters": {
+                    "display_text": "Complete Payment",
+                    "url": payment_url
+                }
+            }
+        }
+    }   
+    
+    return send_whatsapp_message(user_id, message_data)

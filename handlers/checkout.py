@@ -2,7 +2,7 @@ import datetime
 from models.cart import get_cart, get_cart_total, format_cart_summary, clear_cart
 from models.order import create_order, get_order_by_id, update_order_status, update_payment_status, set_shipping_address, set_shipping_method
 from models.session import set_current_action, get_current_action, get_last_context, set_last_context, update_session_history
-from services.messenger import send_text_message, send_button_message, send_list_message, send_template_message
+from services.messenger import send_payment_link_message, send_text_message, send_button_message, send_list_message, send_template_message, send_whatsapp_message
 from utils.logger import get_logger
 from geopy.geocoders import Nominatim
 from services.messenger import send_text_message
@@ -135,7 +135,7 @@ def handle_momo_network_selection(user_id, network):
     # Request mobile money number
     send_text_message(
         user_id,
-        f"Please enter your {network} mobile money number in the format: 024XXXXXXX"
+        f"Please provide your {network} mobile money number"
     )
     
     # Update context with selected network
@@ -153,12 +153,15 @@ def handle_momo_network_selection(user_id, network):
 
 def handle_momo_number_submission(user_id, number_text):
     """Handle mobile money number submission"""
-    # Validate phone number format (simple validation)
+    # Validate phone number format (simple validation for Ghana numbers)
     import re
-    if not re.match(r'^0[0-9]{9}$', number_text):
+    from datetime import datetime
+    import time
+    
+    if not re.match(r'^0[2345]\d{8}$', number_text):
         send_text_message(
             user_id,
-            "The mobile money number format is invalid. Please provide a valid 10-digit number starting with 0 (e.g., 0241234567)."
+            "The mobile money number format is invalid. Please provide a valid 10-digit Ghana number starting with 02, 03, 04, or 05 (e.g., 0241234567)."
         )
         return False
     
@@ -174,11 +177,12 @@ def handle_momo_number_submission(user_id, number_text):
     
     # Store the new mobile money account
     from models.session import get_user_name
+    
     user_name = get_user_name(user_id)
     
     # In a real app, this would be saved to a database
     new_account = {
-        "id": f"momo_{int(datetime.time.time())}",
+        "id": f"momo_{int(time.time())}",
         "network": network,
         "number": number_text,
         "name": user_name,
@@ -186,14 +190,11 @@ def handle_momo_number_submission(user_id, number_text):
         "last_used": datetime.now().isoformat()
     }
     
-    # Send confirmation message
-    send_text_message(
-        user_id,
-        f"Thank you. We'll process payment through your {network} mobile money account {number_text}.\n\n"
-        f"You will receive a prompt on your phone to authorize the payment. Please complete the authorization to proceed with your order."
-    )
+    # Generate a payment URL (in a real implementation, this would be from your payment gateway)
+    payment_url = f"https://payment.example.com/pay/{order_id}?network={network}&phone={number_text}"
     
     # Update payment status
+    from models.order import update_payment_status, get_order_by_id
     update_payment_status(order_id, "pending_momo")
     
     # Store payment details in order
@@ -202,8 +203,18 @@ def handle_momo_number_submission(user_id, number_text):
         order["payment_details"] = {
             "method": "mobile_money",
             "network": network,
-            "number": number_text
+            "number": number_text,
+            "payment_url": payment_url
         }
+    
+    # Instead of just sending a text message, send a message with a payment button
+    send_payment_link_message(
+        user_id,
+        order_id,
+        network,
+        number_text,
+        payment_url
+    )
     
     # Proceed to shipping options
     return handle_shipping_options(user_id, order_id)
@@ -223,12 +234,8 @@ def handle_existing_momo_payment(user_id, order_id, account_id):
         send_text_message(user_id, "Sorry, we couldn't find that payment account. Please try again.")
         return False
     
-    # Send confirmation message
-    send_text_message(
-        user_id,
-        f"Thank you. We'll process payment through your {selected_account['network']} mobile money account {selected_account['number']}.\n\n"
-        f"You will receive a prompt on your phone to authorize the payment. Please complete the authorization to proceed with your order."
-    )
+    # Generate a payment URL (in a real implementation, this would be from your payment gateway)
+    payment_url = f"https://payment.example.com/pay/{order_id}?network={selected_account['network']}&phone={selected_account['number']}"
     
     # Update payment status
     update_payment_status(order_id, "pending_momo")
@@ -239,8 +246,18 @@ def handle_existing_momo_payment(user_id, order_id, account_id):
         order["payment_details"] = {
             "method": "mobile_money",
             "network": selected_account["network"],
-            "number": selected_account["number"]
+            "number": selected_account["number"],
+            "payment_url": payment_url
         }
+    
+    # Instead of just sending a text message, send a message with a payment button
+    send_payment_link_message(
+        user_id,
+        order_id,
+        selected_account["network"],
+        selected_account["number"],
+        payment_url
+    )
     
     # Proceed to shipping options
     return handle_shipping_options(user_id, order_id)
@@ -457,7 +474,7 @@ def handle_shipping_options(user_id, order_id):
             "rows": saved_addresses_rows
         })
     
-    # Add other options section
+    # Add other options section with new pickup option
     other_options_rows = [
         {
             "id": "shipping_new_address", 
@@ -468,6 +485,11 @@ def handle_shipping_options(user_id, order_id):
             "id": "shipping_location", 
             "title": "Use Current Location", 
             "description": "Share your location for delivery"
+        },
+        {
+            "id": "shipping_pickup", 
+            "title": "Pickup from Store", 
+            "description": "Collect your order from our store"
         }
     ]
     
@@ -525,6 +547,10 @@ def handle_shipping_selection(user_id, shipping_option):
         # Set action
         set_current_action(user_id, "awaiting_shipping_location")
         
+    elif shipping_option == "shipping_pickup":
+        # Handle store pickup option
+        return handle_store_pickup(user_id, order_id)
+        
     elif shipping_option.startswith("shipping_address_"):
         # Existing address selected
         address_id = shipping_option.replace("shipping_address_", "")
@@ -536,6 +562,63 @@ def handle_shipping_selection(user_id, shipping_option):
         return handle_shipping_options(user_id, order_id)
     
     return True
+
+def handle_store_pickup(user_id, order_id):
+    """Handle store pickup option"""
+    logger.info(f"Handling store pickup for user {user_id}, order_id={order_id}")
+    
+    # Set shipping method to store pickup
+    set_shipping_method(order_id, "store_pickup")
+    
+    # Default store details
+    store_details = {
+        "name": "Main Store - Accra Mall",
+        "address": "Shop 45, Accra Mall, Spintex Road, Accra",
+        "hours": "Mon-Sat: 9AM-8PM, Sun: 12PM-6PM",
+        "contact": "030-987-6543",
+        "latitude": 5.6037,
+        "longitude": -0.1699
+    }
+    
+    # Update shipping address with store details
+    pickup_address = (
+        f"Store Pickup - {store_details['name']}\n"
+        f"Address: {store_details['address']}\n"
+        f"Hours: {store_details['hours']}\n"
+        f"Contact: {store_details['contact']}"
+    )
+    
+    set_shipping_address(order_id, pickup_address)
+    
+    # Send confirmation with store details
+    send_text_message(
+        user_id,
+        f"Thank you for choosing store pickup. Your order will be available for collection at:\n\n"
+        f"*{store_details['name']}*\n"
+        f"{store_details['address']}\n\n"
+        f"*Store Hours:* {store_details['hours']}\n"
+        f"*Contact:* {store_details['contact']}\n\n"
+        f"Please bring your ID and order number when collecting your order."
+    )
+    
+    # Send location message
+    from services.messenger import send_location_message
+    send_location_message(
+        user_id,
+        store_details['latitude'],
+        store_details['longitude'],
+        store_details['name'],
+        store_details['address']
+    )
+    
+    # Let the customer know about pickup timing
+    send_text_message(
+        user_id,
+        "Your order will be ready for pickup within 24 hours after processing. We'll notify you when it's ready."
+    )
+    
+    # Complete the order
+    return complete_order(user_id, order_id)
 
 def handle_message_after_location_request(user_id, message_body):
     """Handle text message received after a location request (manual address entry)"""
@@ -696,68 +779,6 @@ def handle_delivery_instructions(user_id, instructions):
     
     # Complete the order
     return complete_order(user_id, order_id)
-
-def handle_momo_number_submission(user_id, number_text):
-    """Handle mobile money number submission"""
-    # Validate phone number format (simple validation for Ghana numbers)
-    import re
-    if not re.match(r'^0[2345]\d{8}$', number_text):
-        send_text_message(
-            user_id,
-            "The mobile money number format is invalid. Please provide a valid 10-digit Ghana number starting with 02, 03, 04, or 05 (e.g., 0241234567)."
-        )
-        return False
-    
-    # Get context data
-    context = get_last_context(user_id)
-    
-    if not context or "order_id" not in context or "network" not in context:
-        send_text_message(user_id, "Sorry, there was a problem with your order. Please try again.")
-        return False
-    
-    order_id = context["order_id"]
-    network = context["network"]
-    
-    # Store the new mobile money account
-    from models.session import get_user_name
-    import time
-    from datetime import datetime
-    
-    user_name = get_user_name(user_id)
-    
-    # In a real app, this would be saved to a database
-    new_account = {
-        "id": f"momo_{int(time.time())}",
-        "network": network,
-        "number": number_text,
-        "name": user_name,
-        "is_default": False,
-        "last_used": datetime.now().isoformat()
-    }
-    
-    # Send confirmation message
-    send_text_message(
-        user_id,
-        f"Thank you. We'll process payment through your {network} mobile money account {number_text}.\n\n"
-        f"You will receive a prompt on your phone to authorize the payment. Please complete the authorization to proceed with your order."
-    )
-    
-    # Update payment status
-    from models.order import update_payment_status, get_order_by_id
-    update_payment_status(order_id, "pending_momo")
-    
-    # Store payment details in order
-    order = get_order_by_id(order_id)
-    if order:
-        order["payment_details"] = {
-            "method": "mobile_money",
-            "network": network,
-            "number": number_text
-        }
-    
-    # Proceed to shipping options
-    from handlers.checkout import handle_shipping_options
-    return handle_shipping_options(user_id, order_id)
 
 def handle_location_message(user_id, message):
     """Handle location messages from WhatsApp"""
