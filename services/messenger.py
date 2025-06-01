@@ -95,23 +95,43 @@ def send_list_message(recipient_id, header_text, body_text, button_text, section
     }
     return send_whatsapp_message(recipient_id, message_data)
 
-def send_media_card_carousel(recipient_id, customer_name, discount_percent, promo_code, cards):
-    """Send a media card carousel with product images and buttons"""
+
+
+def send_media_card_carousel(recipient_id, customer_name, product_category, cards):
+    """Send a media card carousel for product browsing based on the template"""
+    
     # Prepare cards for the template
     template_cards = []
     
     for idx, card in enumerate(cards):
+        # Handle image - use the header_handle format from template
+        header_param = {
+            "type": "image",
+            "image": {
+                "id": card.get("image_id", "1220367125959487" )  # Use provided image ID or default
+            }
+        }
+        
+        # If image_id is a URL, you'd need to upload it first to get a media ID
+        # For this implementation, assuming image_id is already a valid media ID
+        
         card_data = {
             "card_index": idx,
             "components": [
                 {
                     "type": "header",
+                    "parameters": [header_param]
+                },
+                {
+                    "type": "body",
                     "parameters": [
                         {
-                            "type": "image",
-                            "image": {
-                                "id": card["image_id"]
-                            }
+                            "type": "text",
+                            "text": card.get("product_name", f"Product {idx + 1}")
+                        },
+                        {
+                            "type": "text", 
+                            "text": card.get("price", "$199")
                         }
                     ]
                 },
@@ -122,32 +142,25 @@ def send_media_card_carousel(recipient_id, customer_name, discount_percent, prom
                     "parameters": [
                         {
                             "type": "payload",
-                            "payload": card["quick_reply_payload"]
-                        }
-                    ]
-                },
-                {
-                    "type": "button",
-                    "sub_type": "url",
-                    "index": "1",
-                    "parameters": [
-                        {
-                            "type": "text",
-                            "text": card["url_button_text"]
+                            "payload": card.get("quick_reply_payload", f"view_options_{card.get('product_name', f'product_{idx}')}")
                         }
                     ]
                 }
             ]
         }
+        
         template_cards.append(card_data)
-    
-    # Create the message data
+
+        
+    n= len(template_cards)
+    print(f"Number of cards in carousel: {n}")
+    # Create the message data matching the template structure
     message_data = {
         "type": "template",
         "template": {
-            "name": "carousel_template_media_cards_v1",
+            "name": f"browse_product_category_template_v{n}",  # Template name from your JSON
             "language": {
-                "code": "en_US"
+                "code": "en"
             },
             "components": [
                 {
@@ -155,15 +168,7 @@ def send_media_card_carousel(recipient_id, customer_name, discount_percent, prom
                     "parameters": [
                         {
                             "type": "text",
-                            "text": customer_name
-                        },
-                        {
-                            "type": "text",
-                            "text": discount_percent
-                        },
-                        {
-                            "type": "text",
-                            "text": promo_code
+                            "text": product_category  # {{2}} - Product category (e.g., "Smartphones")
                         }
                     ]
                 },
@@ -177,7 +182,9 @@ def send_media_card_carousel(recipient_id, customer_name, discount_percent, prom
     
     return send_whatsapp_message(recipient_id, message_data)
 
-def send_product_card_carousel(recipient_id, products, header_text="Featured Products", recipient_name="Customer"):
+
+
+def send_product_card_carousel(recipient_id, products,base_product_name="product"):
     """Send a product carousel using WhatsApp product templates"""
     from config import CATALOG_ID
     
@@ -217,7 +224,7 @@ def send_product_card_carousel(recipient_id, products, header_text="Featured Pro
     message_data = {
         "type": "template",
         "template": {
-            "name": "carousel_template_product_cards_v1",
+            "name": "browse_product_options_v3",
             "language": {
                 "code": "en_US"
             },
@@ -227,7 +234,7 @@ def send_product_card_carousel(recipient_id, products, header_text="Featured Pro
                     "parameters": [
                         {
                             "type": "text",
-                            "text": recipient_name
+                            "text": base_product_name
                         }
                     ]
                 },
@@ -240,6 +247,55 @@ def send_product_card_carousel(recipient_id, products, header_text="Featured Pro
     }
     
     return send_whatsapp_message(recipient_id, message_data)
+
+
+
+def send_single_product_message(recipient_id, product):
+    """Send a single product message using WhatsApp single_product_option template"""
+    from config import CATALOG_ID
+    
+    if not product:
+        logger.error("No product provided for single product message")
+        return None
+    
+    # Ensure required fields exist
+    retailer_id = product.get("retailer_id") or product.get("id", "")
+    catalog_id = product.get("catalog_id") or CATALOG_ID
+    
+    if not retailer_id:
+        logger.error(f"Product missing retailer_id: {product}")
+        return None
+    
+    # Create the message data using single_product_option template
+    message_data = {
+        "type": "template",
+        "template": {
+            "name": "single_product_option",
+            "language": {
+                "code": "en_US"
+            },
+            "components": [
+                {
+                    "type": "header",
+                    "parameters": [
+                        {
+                            "type": "product",
+                            "product": {
+                                "product_retailer_id": retailer_id,
+                                "catalog_id": catalog_id
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    
+    logger.info(f"Sending single product message for product: {product.get('name', retailer_id)}")
+    logger.debug(f"Single product message data: {message_data}")
+    
+    return send_whatsapp_message(recipient_id, message_data)
+
 
 def send_rich_product_carousel(recipient_id, products):
     """Send a rich interactive product carousel"""

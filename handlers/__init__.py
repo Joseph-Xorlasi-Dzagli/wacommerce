@@ -5,7 +5,8 @@ from handlers.browse import (
     handle_browse_product,
     handle_product_details,
     handle_featured_products,
-    handle_see_more_like_this
+    handle_see_more_like_this,
+    handle_view_product_options  # New handler for product options
 )
 from handlers.cart import (
     handle_add_to_cart,
@@ -118,6 +119,11 @@ def get_handler_for_interaction(interaction_id):
     if interaction_id.startswith("cat_"):
         category = interaction_id[4:]
         return lambda user_id: handle_browse_catalog(user_id, category)
+    
+    elif interaction_id.startswith("view_options_"):
+        # New handler for viewing product options
+        product_id = interaction_id[13:]
+        return lambda user_id: handle_view_product_options(user_id, product_id)
     
     elif interaction_id.startswith("product_"):
         product_id = interaction_id[8:]

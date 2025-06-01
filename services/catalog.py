@@ -60,7 +60,7 @@ def fetch_product_details(catalog_id=None):
     url = f"https://graph.facebook.com/v22.0/{catalog_id}/products"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
     params = {
-        "fields": "id,name,description,url,image_url,brand,availability,condition,price,sale_price,additional_image_urls,category,retailer_id,variants,inventory,color,size,currency,visibility"
+        "fields": "id,name,description,url,image_url,brand,availability,condition,price,sale_price,category,retailer_id,inventory,color,size,currency,visibility"
     }
     
     try:
@@ -113,6 +113,7 @@ def get_product_by_id(product_id, catalog_id=None):
     # Check cache first
     if product_id in product_cache:
         logger.debug(f"Product {product_id} found in cache")
+        print(f"Product {product_cache[product_id]} found in this cache hereche")
         return product_cache[product_id]
     
     if not catalog_id:

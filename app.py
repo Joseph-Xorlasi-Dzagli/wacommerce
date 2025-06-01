@@ -111,6 +111,10 @@ def process_messages(messages, contacts, metadata):
             # Handle interactive message (button/list response)
             handle_interactive_message(user_id, message)
         
+        elif message_type == "button":
+            # Handle interactive message (button/list response)
+            handle_button_message(user_id, message)
+        
         elif message_type == "location":
             # Handle location message
             from handlers.checkout import handle_location_message 
@@ -334,6 +338,23 @@ def handle_location_message(user_id, message):
             buttons
         )
 
+
+def handle_button_message(user_id, message):
+    """Handle button messages from the user"""
+    button = message.get("button", {})
+    payload = button.get("payload", "")
+    button_text = button.get("text", "")
+    logger.info(f"Received button message from {user_id}: {payload} ({button_text})")
+
+    # Update user session history
+    update_session_history(user_id, "user", f"Clicked: {button_text}")
+
+    # Find handler for this button payload
+    handler = get_handler_for_interaction(payload)
+    if handler:
+        handler(user_id)
+    else:
+        send_text_message(user_id, "Sorry, I couldn't process that selection. Please try again.")
 
 def handle_order_message(user_id, message):
     """Handle order messages from WhatsApp"""

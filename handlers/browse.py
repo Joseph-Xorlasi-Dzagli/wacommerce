@@ -8,14 +8,17 @@ from services.catalog import (
     get_featured_products
 )
 from services.messenger import (
+    send_single_product_message,
     send_text_message, 
     send_button_message, 
     send_list_message,
-    send_product_card_carousel
+    send_product_card_carousel,
+    send_media_card_carousel
 )
 from models.session import get_user_name, set_last_context, get_last_context, set_current_action
 from utils.logger import get_logger
-from config import CATALOG_ID
+from config import CATALOG_ID, product_options_cache
+import time
 
 logger = get_logger(__name__)
 
@@ -106,7 +109,6 @@ def handle_browse_catalog(user_id, category=None, offset=0):
                 sections
             )
 
-
         else:
             # For fewer categories, use the original list approach
             rows = []
@@ -130,7 +132,7 @@ def handle_browse_catalog(user_id, category=None, offset=0):
                 sections
             )
     else:
-        # Show products in the selected category
+        # Show products in the selected category using media card carousel
         products = get_products_by_category(category, offset=offset, limit=10)
         
         if not products:
@@ -151,17 +153,10 @@ def handle_browse_catalog(user_id, category=None, offset=0):
             "total_products": total_products
         })
         
-        # For each product, add a "See more like this" button
-        # This is handled by modifying how we send the product cards
-        send_product_carousel_with_more_button(
-            user_id,
-            products,
-            f"{category.title()} Products",
-            get_user_name(user_id),
-            category
-        )
+        # Send media card carousel for category browsing
+        send_category_media_carousel(user_id, products, category)
         
-        # Show page navigation
+        # Show page navigation if there are more products
         if total_products > 10:
             # Calculate next offset, handling wraparound
             next_offset = (offset + 10) % total_products
@@ -183,52 +178,51 @@ def handle_browse_catalog(user_id, category=None, offset=0):
                 "What would you like to do next?",
                 buttons
             )
-            
-def send_product_carousel_with_more_button(user_id, products, header_text, recipient_name, category):
-    """Send a product carousel with a 'See more like this' option"""
-    # Get the total products and current offset from context
-    context = get_last_context(user_id)
-    total_products = context.get("total_products", 0) if context else 0
-    current_offset = context.get("offset", 0) if context else 0
-    
-    # Prepare a message that will be sent before the carousel
-    # explaining how to see more products
-    if total_products > 10:
-        browsing_instructions = (
-            f"*{header_text}*\n\n"
-            f"To see more products in this category, select any product and then click 'See more like this'."
-        )
-        send_text_message(user_id, browsing_instructions)
-    
-    # Now send the actual product carousel
+
+def send_category_media_carousel(user_id, products, category):
+    """Send a media card carousel for category browsing"""
     try:
-        # Enhance products with catalog_id and add see_more button info
-        for product in products:
-            if "catalog_id" not in product:
-                product["catalog_id"] = CATALOG_ID
-            if "retailer_id" not in product and "id" in product:
-                product["retailer_id"] = product["id"]
-            
-            # We'll add a context identifier to the product
-            # so we can track "see more like this" clicks
-            product["see_more_context"] = f"more_{category}_{current_offset}"
+        # Prepare cards for media carousel
+        cards = []
+        for product in products[:10]:  # Limit to 10 as per WhatsApp restrictions
+            # Prepare card data
+            # card = {
+            #     "image_id": "1220367125959487",  # Use default if no image
+            #     "quick_reply_payload": f"view_options_{product['id']}",
+            #     "quick_reply_text": "View Options",
+            #     "url_button_text": product.get("name", "Product")[:20]  # Limit text length
+            # }
+            card = {
+            "image_id": "1220367125959487",
+            "product_name": product['name'],
+            "price": product['price'],
+            "quick_reply_payload": f"view_options_{product['id']}"
+            }
+            cards.append(card)
         
-        # Send product carousel
-        from services.messenger import send_product_card_carousel
-        send_product_card_carousel(
+       
+        
+        # Send media card carousel
+        # Using generic template parameters for demo
+        customer_name = get_user_name(user_id)
+        discount_percent = "10%"  # Can be dynamic based on user/category
+        promo_code = "SAVE10"    # Can be dynamic
+
+        send_media_card_carousel(
             user_id,
-            products,
-            header_text,
-            recipient_name
+            customer_name,
+            category,
+            cards
         )
         
         return True
-    except Exception as e:
-        logger.error(f"Error sending product carousel: {str(e)}")
         
-        # Fallback to text list if carousel fails
-        products_text = f"*{header_text}:*\n\n"
-        for i, product in enumerate(products, 1):
+    except Exception as e:
+        logger.error(f"Error sending media card carousel: {str(e)}")
+        
+        # Fallback to text list
+        products_text = f"*{category.title()} Products:*\n\n"
+        for i, product in enumerate(products[:10], 1):
             price = product.get("price", "N/A")
             products_text += f"{i}. {product['name']} - ${price}\n"
         
@@ -240,19 +234,109 @@ def send_product_carousel_with_more_button(user_id, products, header_text, recip
             buttons.append({
                 "type": "reply", 
                 "reply": {
-                    "id": f"product_{product['id']}", 
-                    "title": f"View {product['name'][:20]}"
+                    "id": f"view_options_{product['id']}", 
+                    "title": f"{product['name'][:15]}..."
                 }
             })
         
         send_button_message(
             user_id,
-            "Product Selection",
-            "Select a product to view details:",
+            "Select Product",
+            "Choose a product to view options:",
             buttons
         )
         
         return False
+
+def handle_view_product_options(user_id, product_id):
+    """Handle viewing product options/variants"""
+    logger.info(f"Handling view product options for user {user_id}, product_id={product_id}")
+    
+    # Get base product details
+    base_product = get_product_by_id(product_id)
+    
+    if not base_product:
+        send_text_message(user_id, "Sorry, I couldn't find details for this product.")
+        return False
+    
+    # Check if product has options/variants
+    product_options = product_options_cache.get(product_id, [])
+
+    
+    if not product_options:
+        send_single_product_message(user_id, base_product)
+        return True
+    
+    # Get details for all product variants
+    variant_products = []
+    for variant_id in product_options[:10]:  # Limit to 10 for carousel
+        variant = get_product_by_id(variant_id)
+        if variant:
+            variant_products.append(variant)
+    
+    if not variant_products:
+        send_single_product_message(user_id, base_product)
+        return True
+
+    
+    print(f"Variant products: {variant_products}")
+    
+    try:
+        # Send product card carousel for variants
+        send_product_card_carousel(
+            user_id,
+            variant_products,
+            base_product['name']
+        )
+
+        # Ensure the product carousel completes before calling browse catalog
+        time.sleep(5)  # Wait 1 second to allow the carousel to send before browsing catalog
+
+        handle_browse_catalog(user_id)
+        
+        # Add navigation buttons
+        context = get_last_context(user_id)
+        category = context.get("category") if context else None
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error sending product options carousel: {str(e)}")
+        
+        # Fallback to list format
+        options_text = f"*Available Options for {base_product['name']}:*\n\n"
+        for i, variant in enumerate(variant_products[:5], 1):
+            price = variant.get("price", "N/A")
+            variant_details = []
+            if variant.get("size"):
+                variant_details.append(f"Size: {variant['size']}")
+            if variant.get("color"):
+                variant_details.append(f"Color: {variant['color']}")
+            
+            details_str = " | ".join(variant_details) if variant_details else "Standard"
+            options_text += f"{i}. {variant['name']} ({details_str}) - ${price}\n"
+        
+        send_text_message(user_id, options_text)
+        
+        # Offer selection buttons
+        buttons = []
+        for i, variant in enumerate(variant_products[:3], 1):
+            buttons.append({
+                "type": "reply",
+                "reply": {
+                    "id": f"product_{variant['id']}",
+                    "title": f"Option {i}"
+                }
+            })
+        
+        send_button_message(
+            user_id,
+            "Select Option",
+            "Choose an option to view details:",
+            buttons
+        )
+        
+        return True
 
 def handle_product_details(user_id, product_id):
     """Handle showing details for a specific product"""
@@ -272,25 +356,18 @@ def handle_product_details(user_id, product_id):
     context = get_last_context(user_id)
     category = context.get("category", None) if context else None
     
-    # Send details with add to cart and see more like this buttons
+    # Send details with add to cart and navigation buttons
     buttons = [
         {"type": "reply", "reply": {"id": f"add_{product_id}", "title": "Add to Cart"}}
     ]
     
-    # Add "See more like this" button if we have category context
+    # Add navigation options
     if category:
-        # Get current offset and total products
-        current_offset = context.get("offset", 0)
-        total_products = context.get("total_products", 0)
-        
-        # Calculate next set of products (wrap around if at the end)
-        next_offset = (current_offset + 10) % total_products if total_products > 0 else 0
-        
         buttons.append({
             "type": "reply", 
             "reply": {
-                "id": f"more_{category}_{next_offset}", 
-                "title": "See more like this"
+                "id": f"cat_{category}", 
+                "title": "Back to Category"
             }
         })
     
@@ -364,33 +441,61 @@ def handle_browse_product(user_id, product_query):
         "offset": 0
     })
     
-    # Try to send product carousel
+    # For search results, use media card carousel too
+    send_search_media_carousel(user_id, products, product_query)
+    
+    return True
+
+def send_search_media_carousel(user_id, products, query):
+    """Send media card carousel for search results"""
     try:
-        send_product_card_carousel(
+        # Prepare cards for media carousel
+        cards = []
+        for product in products[:10]:
+            card = {
+                "image_id": product.get("image_url", "2362891770745441"),
+                "quick_reply_payload": f"view_options_{product['id']}",
+                "quick_reply_text": "View Options",
+                "url_button_text": product.get("name", "Product")[:20]
+            }
+            cards.append(card)
+        
+        send_text_message(
             user_id,
-            products,
-            f"Search Results: {product_query}",
-            get_user_name(user_id)
+            f"*Search Results for '{query}'*\n\n"
+            f"Found {len(products)} products. Click 'View Options' to see details."
         )
         
-        # Show options buttons
-        if len(products) > 1:
-            buttons = [
-                {"type": "reply", "reply": {"id": "browse", "title": "Browse Categories"}},
-                {"type": "reply", "reply": {"id": "search_again", "title": "Search Again"}}
-            ]
-            
-            send_button_message(
-                user_id,
-                "Search Results",
-                f"Found {len(products)} products matching '{product_query}'.",
-                buttons
-            )
+        # Send media card carousel
+        customer_name = get_user_name(user_id)
+        send_media_card_carousel(
+            user_id,
+            customer_name,
+            "10%",
+            "SEARCH10",
+            cards
+        )
+        
+        # Show navigation options
+        buttons = [
+            {"type": "reply", "reply": {"id": "browse", "title": "Browse Categories"}},
+            {"type": "reply", "reply": {"id": "search_again", "title": "Search Again"}}
+        ]
+        
+        send_button_message(
+            user_id,
+            "Search Complete",
+            "What would you like to do next?",
+            buttons
+        )
+        
+        return True
+        
     except Exception as e:
         logger.error(f"Error sending search results carousel: {str(e)}")
         
-        # Fallback to text list if carousel fails
-        results_text = f"*Search Results for '{product_query}':*\n\n"
+        # Fallback to text list
+        results_text = f"*Search Results for '{query}':*\n\n"
         for i, product in enumerate(products[:5], 1):
             price = product.get("price", "N/A")
             results_text += f"{i}. {product['name']} - ${price}\n"
@@ -403,19 +508,19 @@ def handle_browse_product(user_id, product_query):
             buttons.append({
                 "type": "reply", 
                 "reply": {
-                    "id": f"product_{product['id']}", 
-                    "title": f"View {product['name'][:20]}"
+                    "id": f"view_options_{product['id']}", 
+                    "title": f"View {product['name'][:15]}"
                 }
             })
         
         send_button_message(
             user_id,
             "Product Selection",
-            "Select a product to view details:",
+            "Select a product to view options:",
             buttons
         )
-    
-    return True
+        
+        return False
 
 def handle_featured_products(user_id):
     """Handle showing featured products"""
@@ -427,12 +532,31 @@ def handle_featured_products(user_id):
         send_text_message(user_id, "Sorry, we couldn't find any featured products at the moment.")
         return False
     
+    # Use media card carousel for featured products
     try:
-        send_product_card_carousel(
+        cards = []
+        for product in products[:10]:
+            card = {
+                "image_id": product.get("image_url", "2362891770745441"),
+                "quick_reply_payload": f"view_options_{product['id']}",
+                "quick_reply_text": "View Options",
+                "url_button_text": product.get("name", "Product")[:20]
+            }
+            cards.append(card)
+        
+        send_text_message(
             user_id,
-            products,
-            "Featured Products",
-            get_user_name(user_id)
+            "*Featured Products*\n\n"
+            "Check out these handpicked products!"
+        )
+        
+        customer_name = get_user_name(user_id)
+        send_media_card_carousel(
+            user_id,
+            customer_name,
+            "15%",
+            "FEATURED15",
+            cards
         )
         
         # Show options buttons
@@ -443,12 +567,13 @@ def handle_featured_products(user_id):
         
         send_button_message(
             user_id,
-            "Our Top Picks",
-            "Check out these featured products handpicked for you!",
+            "More Options",
+            "What would you like to do next?",
             buttons
         )
         
         return True
+        
     except Exception as e:
         logger.error(f"Error sending featured products carousel: {str(e)}")
         
@@ -460,3 +585,9 @@ def handle_featured_products(user_id):
         
         send_text_message(user_id, featured_text)
         return False
+
+# Keep the original send_product_carousel_with_more_button for backwards compatibility
+# but it's not used in the new media card flow
+def send_product_carousel_with_more_button(user_id, products, header_text, recipient_name, category):
+    """Legacy function - kept for compatibility"""
+    return send_product_card_carousel(user_id, products, header_text, recipient_name)
