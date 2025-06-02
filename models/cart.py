@@ -1,5 +1,5 @@
 from models.session import init_user_session
-from services.catalog import get_product_by_id
+from services.catalog import get_product_by_id, get_product_by_retailer_id
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -132,7 +132,7 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
     
     if price is None:
         # Get product details from catalog
-        product = get_product_by_id(product_id)
+        product = get_product_by_retailer_id(product_id)
         
         if not product:
             logger.error(f"Failed to add product {product_id} to cart - product not found")
@@ -150,7 +150,7 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
     else:
         # If we don't have product details but have the ID, try to get minimal info
         try:
-            product = get_product_by_id(product_id)
+            product = get_product_by_retailer_id(product_id)
             if product:
                 product_name = product.get("name", f"Product {product_id}")
                 product_image_url = product.get("image_url", "")

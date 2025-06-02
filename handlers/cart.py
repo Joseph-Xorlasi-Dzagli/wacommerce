@@ -10,7 +10,7 @@ from models.cart import (
 )
 from models.session import init_user_session, set_current_action, get_current_action
 from services.messenger import send_text_message, send_button_message, send_list_message
-from services.catalog import get_product_by_id
+from services.catalog import get_product_by_id, get_product_by_retailer_id
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -211,7 +211,75 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
     
     if price is None:
         # Get product details from catalog
-        product = get_product_by_id(product_id)
+        product = get_product_by_retailer_id(product_id)
+        print(f"\n\nProduct details: {product}\n\n")
+
+        
+        if not product:
+            logger.error(f"Failed to add product {product_id} to cart - product not found")
+            return False
+        
+        # Get price from product
+        price = product.get("price", "0")
+        if isinstance(price, str) and ' ' in price:
+            # Handle price format like "10 GHS"
+            price = price.split()[0]
+        
+        product_name = product.get("name", f"Product {product_id}")
+        product_image_url = product.get("image_url", "")
+        currency = product.get("currency", currency or "GHS")
+    else:
+        # If we don't have product details but have the ID, try to get minimal info
+        try:
+            product = get_product_by_retailer_id(product_id)
+            logger.debug(f"\n\nProduct details: {product}")
+            print(f"\n\nProduct details: {product}")    
+            if product:
+                # The product response may have a "data" list with product info
+                if "data" in product and isinstance(product["data"], list) and product["data"]:
+                    product_name = product["data"][0].get("name", f"Product {product_id}")
+                else:
+                    product_name = product.get("name", f"Product {product_id}")
+                product_image_url = product.get("image_url", "")
+        except:
+            product_name = f"Product {product_id}"
+    
+    try:
+        price_float = float(price)
+    except ValueError:
+        price_float = 0
+        logger.warning(f"Could not parse price '{price}' for product {product_id}")
+    
+    # Check if product already in cart
+    for item in session["cart"]:
+        if item["product_id"] == product_id:
+            item["quantity"] += quantity
+            logger.info(f"Updated quantity for product {product_id} in cart for user {user_id}")
+            return True
+    
+    # Add new item to cart
+    cart_item = {
+        "product_id": product_id,
+        "name": product_name,
+        "price": price_float,
+        "quantity": quantity,
+        "image_url": product_image_url,
+        "currency": currency or "GHS"
+    }
+    print(f"\n\nCart item: {cart_item}\n\n")
+    session["cart"].append(cart_item)
+    logger.info(f"Added product {product_id} to cart for user {user_id} with price {price_float} {currency}")
+    return True
+    """Add a product to the user's cart with specific price details"""
+    session = init_user_session(user_id)
+    
+    # If price is not provided, get product details
+    product_name = ""
+    product_image_url = ""
+    
+    if price is None:
+        # Get product details from catalog
+        product = get_product_by_retailer_id(product_id)
         
         if not product:
             logger.error(f"Failed to add product {product_id} to cart - product not found")
@@ -229,7 +297,7 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
     else:
         # If we don't have product details but have the ID, try to get minimal info
         try:
-            product = get_product_by_id(product_id)
+            product = get_product_by_retailer_id(product_id)
             if product:
                 product_name = product.get("name", f"Product {product_id}")
                 product_image_url = product.get("image_url", "")

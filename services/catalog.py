@@ -276,3 +276,64 @@ def initialize_catalog():
     logger.info("Initializing product catalog...")
     fetch_product_details()
     logger.info(f"Catalog initialized with {len(product_cache)} products and {len(category_cache)} categories")
+
+def get_product_by_retailer_id(retailer_id, catalog_id=None):
+    """Fetch product details using the retailer_id from the catalog"""
+    print(f"Fetching product by retailer_id: {retailer_id}")
+    if not catalog_id:
+        catalog_id = CATALOG_ID
+
+    if not catalog_id:
+        _, catalog_id = fetch_catalog()
+        if not catalog_id:
+            logger.error("No catalog ID available")
+            return None
+
+    # Fixed URL construction - proper JSON encoding for filter parameter
+    import json
+    filter_param = json.dumps({'retailer_id': {'contains': retailer_id}})
+    url = f"https://graph.facebook.com/v22.0/{catalog_id}/products"
+    
+    headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+    params = {
+        "fields": "id,name,description,url,image_url,brand,availability,condition,price,sale_price,additional_image_urls,category,retailer_id,variants,inventory,color,size,currency,visibility",
+        "filter": filter_param
+    }
+
+    try:
+        print(f"Fetching product by retailer_id: {retailer_id} with catalog_id: {catalog_id}")
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch product by retailer_id {retailer_id}: {response.text}")
+            return None
+
+        data = response.json()
+        print(f"API Response: {data}")
+        
+        # Handle the response structure - Facebook Graph API returns data in 'data' array
+        if 'data' not in data or not data['data']:
+            logger.warning(f"No products found for retailer_id: {retailer_id}")
+            return None
+        
+        # Get the first product from the results
+        product = data['data'][0]
+        product["catalog_id"] = catalog_id
+        
+        # Use product ID if available, otherwise use retailer_id as fallback
+        product_key = product.get("id", retailer_id)
+        product_cache[product_key] = product
+
+        # Handle category caching
+        if "category" in product:
+            category = product["category"]
+            if category not in category_cache:
+                category_cache[category] = []
+            if product_key not in category_cache[category]:
+                category_cache[category].append(product_key)
+
+        logger.info(f"Fetched product {product_key} by retailer_id {retailer_id}") 
+        return product
+        
+    except Exception as e:
+        logger.error(f"Error fetching product by retailer_id: {str(e)}")
+        return None
