@@ -30,7 +30,7 @@ def add_to_cart(user_id, product_id, quantity=1):
     # Add new item to cart
     price = product.get("price", "0")
     if isinstance(price, str) and ' ' in price:
-        # Handle price format like "10 USD"
+        # Handle price format like "10 GHS"
         price = price.split()[0]
     
     try:
@@ -45,7 +45,7 @@ def add_to_cart(user_id, product_id, quantity=1):
         "price": price_float,
         "quantity": quantity,
         "image_url": product.get("image_url", ""),
-        "currency": product.get("currency", "USD")
+        "currency": product.get("currency", "GHS")
     }
     
     session["cart"].append(cart_item)
@@ -111,14 +111,14 @@ def format_cart_summary(user_id):
     
     summary = "*Your Shopping Cart*\n\n"
     total = 0
-    currency = cart[0].get("currency", "USD")
+    currency = cart[0].get("currency", "GHS")
     
     for item in cart:
         item_total = item["price"] * item["quantity"]
-        summary += f"• {item['name']} x {item['quantity']} = ${item_total:.2f}\n"
+        summary += f"• {item['name']} x {item['quantity']} = GHS{item_total:.2f}\n"
         total += item_total
     
-    summary += f"\n*Total: ${total:.2f} {currency}*"
+    summary += f"\n*Total: GHS{total:.2f} {currency}*"
     return summary
 
 
@@ -141,12 +141,12 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
         # Get price from product
         price = product.get("price", "0")
         if isinstance(price, str) and ' ' in price:
-            # Handle price format like "10 USD"
+            # Handle price format like "10 GHS"
             price = price.split()[0]
         
         product_name = product.get("name", f"Product {product_id}")
         product_image_url = product.get("image_url", "")
-        currency = product.get("currency", currency or "USD")
+        currency = product.get("currency", currency or "GHS")
     else:
         # If we don't have product details but have the ID, try to get minimal info
         try:
@@ -177,7 +177,7 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
         "price": price_float,
         "quantity": quantity,
         "image_url": product_image_url,
-        "currency": currency or "USD"
+        "currency": currency or "GHS"
     }
     
     session["cart"].append(cart_item)

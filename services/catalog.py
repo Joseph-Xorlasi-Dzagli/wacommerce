@@ -247,9 +247,9 @@ def format_product_details(product):
     
     if "price" in product:
         price = product["price"]
-        currency = product.get("currency", "USD")
+        currency = product.get("currency", "GHS")
         if isinstance(price, str) and ' ' in price:
-            # Handle price format like "10 USD"
+            # Handle price format like "10 GHS"
             details += f"*Price:* {price}\n"
         else:
             details += f"*Price:* {price} {currency}\n"

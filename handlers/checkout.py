@@ -322,7 +322,7 @@ def handle_confirm_checkout(user_id):
     send_list_message(
         user_id,
         "Choose Payment Method",
-        f"Order #{order['order_id']} - Total: ${order['total']:.2f}",
+        f"Order #{order['order_id']} - Total: GHS{order['total']:.2f}",
         "Select Payment",
         sections
     )

@@ -79,9 +79,9 @@ def handle_support_shipping(user_id):
         "*Standard Shipping (Free)*\n"
         "• Delivery in 3-5 business days\n"
         "• Available for all domestic orders\n"
-        "• Free for orders over $50\n\n"
+        "• Free for orders over GHS50\n\n"
         
-        "*Express Shipping ($9.99)*\n"
+        "*Express Shipping (GHS9.99)*\n"
         "• Delivery in 1-2 business days\n"
         "• Available for domestic orders placed before 2PM\n"
         "• Includes weekend delivery\n\n"

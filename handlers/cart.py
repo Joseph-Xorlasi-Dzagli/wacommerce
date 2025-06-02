@@ -288,12 +288,12 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
         # Get price from product
         price = product.get("price", "0")
         if isinstance(price, str) and ' ' in price:
-            # Handle price format like "10 USD"
+            # Handle price format like "10 GHS"
             price = price.split()[0]
         
         product_name = product.get("name", f"Product {product_id}")
         product_image_url = product.get("image_url", "")
-        currency = product.get("currency", currency or "USD")
+        currency = product.get("currency", currency or "GHS")
     else:
         # If we don't have product details but have the ID, try to get minimal info
         try:
@@ -324,7 +324,7 @@ def add_to_cart_with_details(user_id, product_id, quantity=1, price=None, curren
         "price": price_float,
         "quantity": quantity,
         "image_url": product_image_url,
-        "currency": currency or "USD"
+        "currency": currency or "GHS"
     }
     
     session["cart"].append(cart_item)

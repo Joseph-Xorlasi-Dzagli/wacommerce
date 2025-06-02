@@ -224,7 +224,7 @@ def send_category_media_carousel(user_id, products, category):
         products_text = f"*{category.title()} Products:*\n\n"
         for i, product in enumerate(products[:10], 1):
             price = product.get("price", "N/A")
-            products_text += f"{i}. {product['name']} - ${price}\n"
+            products_text += f"{i}. {product['name']} - GHS {price}\n"
         
         send_text_message(user_id, products_text)
         
@@ -314,7 +314,7 @@ def handle_view_product_options(user_id, product_id):
                 variant_details.append(f"Color: {variant['color']}")
             
             details_str = " | ".join(variant_details) if variant_details else "Standard"
-            options_text += f"{i}. {variant['name']} ({details_str}) - ${price}\n"
+            options_text += f"{i}. {variant['name']} ({details_str}) - GHS{price}\n"
         
         send_text_message(user_id, options_text)
         
@@ -498,7 +498,7 @@ def send_search_media_carousel(user_id, products, query):
         results_text = f"*Search Results for '{query}':*\n\n"
         for i, product in enumerate(products[:5], 1):
             price = product.get("price", "N/A")
-            results_text += f"{i}. {product['name']} - ${price}\n"
+            results_text += f"{i}. {product['name']} - GHS{price}\n"
         
         send_text_message(user_id, results_text)
         
@@ -581,7 +581,7 @@ def handle_featured_products(user_id):
         featured_text = "*Featured Products:*\n\n"
         for i, product in enumerate(products[:5], 1):
             price = product.get("price", "N/A")
-            featured_text += f"{i}. {product['name']} - ${price}\n"
+            featured_text += f"{i}. {product['name']} - GHS{price}\n"
         
         send_text_message(user_id, featured_text)
         return False

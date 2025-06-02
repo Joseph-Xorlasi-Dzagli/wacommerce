@@ -131,7 +131,7 @@ def send_media_card_carousel(recipient_id, customer_name, product_category, card
                         },
                         {
                             "type": "text", 
-                            "text": card.get("price", "$199")
+                            "text": card.get("price", "GHS199")
                         }
                     ]
                 },

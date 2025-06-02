@@ -171,9 +171,9 @@ def format_order_summary(order_id):
     summary += "*Items:*\n"
     for item in order['items']:
         item_total = item["price"] * item["quantity"]
-        summary += f"• {item['name']} x {item['quantity']} = ${item_total:.2f}\n"
+        summary += f"• {item['name']} x {item['quantity']} = GHS{item_total:.2f}\n"
     
-    summary += f"\n*Total: ${order['total']:.2f}*\n\n"
+    summary += f"\n*Total: GHS{order['total']:.2f}*\n\n"
     
     if order["shipping_address"]:
         summary += f"*Shipping Address:*\n{order['shipping_address']}\n\n"

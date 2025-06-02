@@ -390,7 +390,7 @@ def handle_order_message(user_id, message):
             
             # Get item price and currency
             item_price = item.get("item_price", 0)
-            currency = item.get("currency", "USD")
+            currency = item.get("currency", "GHS")
             
             # Add to cart with provided details
             success = add_to_cart_with_details(
