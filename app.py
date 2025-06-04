@@ -181,6 +181,33 @@ def handle_text_message(user_id, message):
             "👨‍💼 *Agent Sarah:* Thank you for your message. Is there anything else I can help you with today?"
         )
     
+    # NEW: Handle inventory decision waiting
+    elif current_action == "awaiting_inventory_decision":
+        # User is responding to inventory availability message
+        # Check for keywords that indicate their decision
+        message_lower = message_body.lower()
+        
+        if any(word in message_lower for word in ["proceed", "continue", "yes", "accept", "available"]):
+            from handlers.checkout import handle_proceed_with_available
+            handle_proceed_with_available(user_id)
+        elif any(word in message_lower for word in ["cancel", "no", "stop", "abort"]):
+            from handlers.checkout import handle_cancel_inventory_order
+            handle_cancel_inventory_order(user_id)
+        else:
+            # Unclear response - ask for clarification
+            from services.messenger import send_button_message
+            buttons = [
+                {"type": "reply", "reply": {"id": "proceed_with_available", "title": "Proceed with Available"}},
+                {"type": "reply", "reply": {"id": "cancel_inventory_order", "title": "Cancel Order"}}
+            ]
+            
+            send_button_message(
+                user_id,
+                "Please Choose",
+                "I didn't understand your response. Would you like to proceed with the available items or cancel your order?",
+                buttons
+            )
+    
     else:
         # Process user intent
         intent_data = process_intent(message_body, user_id)

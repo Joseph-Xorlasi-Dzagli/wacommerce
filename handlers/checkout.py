@@ -3,11 +3,219 @@ from models.cart import get_cart, get_cart_total, format_cart_summary, clear_car
 from models.order import create_order, get_order_by_id, update_order_status, update_payment_status, set_shipping_address, set_shipping_method
 from models.session import set_current_action, get_current_action, get_last_context, set_last_context, update_session_history
 from services.messenger import send_payment_link_message, send_text_message, send_button_message, send_list_message, send_template_message, send_whatsapp_message
+from services.inventory import check_inventory_availability, format_inventory_message, update_cart_with_available_stock
 from utils.logger import get_logger
 from geopy.geocoders import Nominatim
 from services.messenger import send_text_message
 
 logger = get_logger(__name__)
+
+
+# Replace the existing handle_confirm_checkout function with this updated version
+def handle_confirm_checkout(user_id):
+    """Handle checkout confirmation with inventory verification"""
+    logger.info(f"Handling checkout confirmation for user {user_id}")
+    
+    # Check if cart has items
+    cart = get_cart(user_id)
+    
+    if not cart or len(cart) == 0:
+        send_text_message(user_id, "Your cart is empty. Please add some products before checking out.")
+        
+        buttons = [
+            {"type": "reply", "reply": {"id": "browse", "title": "Browse Products"}}
+        ]
+        
+        send_button_message(user_id, "Empty Cart", "Start shopping?", buttons)
+        return True
+    
+    print("check_inventory_availability.__doc__:", check_inventory_availability.__doc__)
+    # NEW: Check inventory availability before proceeding
+    inventory_results = check_inventory_availability(cart)
+    
+    if inventory_results["has_issues"]:
+        # Store inventory results in context for later use
+        set_last_context(user_id, {
+            "action": "checkout_inventory_check",
+            "inventory_results": inventory_results
+        })
+        
+        # Format and send inventory message
+        inventory_message = format_inventory_message(inventory_results)
+        
+        if inventory_results["modified_cart"]:
+            # Some items available - offer to proceed or cancel
+            buttons = [
+                {"type": "reply", "reply": {"id": "proceed_with_available", "title": "Proceed to Checkout"}},
+                {"type": "reply", "reply": {"id": "cancel_inventory_order", "title": "Cancel Order"}}
+            ]
+            
+            send_button_message(
+                user_id,
+                "Inventory Check",
+                inventory_message,
+                buttons
+            )
+        else:
+            # No items available - only option is to cancel
+            send_text_message(user_id, inventory_message)
+            
+            buttons = [
+                {"type": "reply", "reply": {"id": "browse", "title": "Browse Products"}},
+                {"type": "reply", "reply": {"id": "view_cart", "title": "View Cart"}}
+            ]
+            
+            send_button_message(
+                user_id,
+                "Order Cannot Proceed",
+                "All items in your cart are currently out of stock. What would you like to do?",
+                buttons
+            )
+        
+        # Set current action to wait for inventory decision
+        set_current_action(user_id, "awaiting_inventory_decision")
+        return True
+    
+    # All items available - proceed with normal checkout flow
+    return proceed_to_payment_selection(user_id)
+
+def proceed_to_payment_selection(user_id):
+    """Proceed to payment selection after inventory check passes"""
+    # Create order from cart
+    order = create_order(user_id)
+    
+    if not order:
+        send_text_message(user_id, "Sorry, there was a problem creating your order. Please try again.")
+        return False
+    
+    # Store order ID in context
+    set_last_context(user_id, {
+        "action": "checkout",
+        "order_id": order["order_id"]
+    })
+    
+    # Present payment options
+    from config import MOCK_PAYMENT_ACCOUNTS
+    
+    # Create sections for the list message
+    sections = []
+    
+    # Add saved mobile money accounts section if available
+    if MOCK_PAYMENT_ACCOUNTS:
+        saved_accounts_rows = []
+        for account in MOCK_PAYMENT_ACCOUNTS:
+            saved_accounts_rows.append({
+                "id": f"payment_momo_{account['id']}",
+                "title": f"{account['network']} - {account['number']}",
+                "description": f"{'(Default)' if account['is_default'] else ''}"
+            })
+        
+        sections.append({
+            "title": "Saved Payment Accounts",
+            "rows": saved_accounts_rows
+        })
+    
+    # Add other options section
+    other_options_rows = [
+        {
+            "id": "payment_new_momo", 
+            "title": "Add Payment Account", 
+            "description": "Pay with a different mobile money account"
+        },
+        {
+            "id": "payment_cod", 
+            "title": "Cash on Delivery", 
+            "description": "Pay when you receive your order"
+        }
+    ]
+    
+    sections.append({
+        "title": "Other Payment Options",
+        "rows": other_options_rows
+    })
+    
+    send_list_message(
+        user_id,
+        "Choose Payment Method",
+        f"Order #{order['order_id']} - Total: GHS{order['total']:.2f}",
+        "Select Payment",
+        sections
+    )
+    
+    # Set current action
+    set_current_action(user_id, "awaiting_payment_method")
+    
+    return True
+
+def handle_proceed_with_available(user_id):
+    """Handle customer decision to proceed with available items"""
+    logger.info(f"Handling proceed with available items for user {user_id}")
+    
+    # Get inventory results from context
+    context = get_last_context(user_id)
+    
+    if not context or "inventory_results" not in context:
+        send_text_message(user_id, "Sorry, there was a problem processing your request. Please try checkout again.")
+        return False
+    
+    inventory_results = context["inventory_results"]
+    
+    # Update cart with available items only
+    if inventory_results["modified_cart"]:
+        update_cart_with_available_stock(user_id, inventory_results["modified_cart"])
+        
+        # Show updated cart summary
+        cart_summary = format_cart_summary(user_id)
+        
+        send_text_message(
+            user_id,
+            f"✅ *Cart Updated*\n\n{cart_summary}\n\nProceeding to payment..."
+        )
+        
+        # Add a small delay to let user see the confirmation
+        import time
+        time.sleep(1)
+        
+        # Proceed to payment selection
+        return proceed_to_payment_selection(user_id)
+    else:
+        # Shouldn't happen, but handle gracefully
+        send_text_message(user_id, "No items are available to proceed with. Please browse our products.")
+        
+        buttons = [
+            {"type": "reply", "reply": {"id": "browse", "title": "Browse Products"}}
+        ]
+        
+        send_button_message(user_id, "No Items", "Start shopping?", buttons)
+        return True
+
+def handle_cancel_inventory_order(user_id):
+    """Handle customer decision to cancel order due to inventory issues"""
+    logger.info(f"Handling cancel inventory order for user {user_id}")
+    
+    # Clear the current action
+    set_current_action(user_id, None)
+    
+    # Send confirmation message
+    send_text_message(
+        user_id,
+        "Your order has been cancelled. Your cart items remain saved if you'd like to try again later."
+    )
+    
+    # Offer options to continue
+    buttons = [
+        {"type": "reply", "reply": {"id": "view_cart", "title": "View Cart"}},
+        {"type": "reply", "reply": {"id": "browse", "title": "Browse Products"}}
+    ]
+    
+    send_button_message(
+        user_id,
+        "Order Cancelled",
+        "What would you like to do next?",
+        buttons
+    )
+    
+    return True
 
 def handle_checkout(user_id):
     """Handle checkout intent, starting the checkout flow"""
@@ -262,75 +470,75 @@ def handle_existing_momo_payment(user_id, order_id, account_id):
     # Proceed to shipping options
     return handle_shipping_options(user_id, order_id)
 
-def handle_confirm_checkout(user_id):
-    """Handle checkout confirmation, proceeding to payment"""
-    logger.info(f"Handling checkout confirmation for user {user_id}")
+# def handle_confirm_checkout(user_id):
+#     """Handle checkout confirmation, proceeding to payment"""
+#     logger.info(f"Handling checkout confirmation for user {user_id}")
     
-    # Create order from cart
-    order = create_order(user_id)
+#     # Create order from cart
+#     order = create_order(user_id)
     
-    if not order:
-        send_text_message(user_id, "Sorry, there was a problem creating your order. Please try again.")
-        return False
+#     if not order:
+#         send_text_message(user_id, "Sorry, there was a problem creating your order. Please try again.")
+#         return False
     
-    # Store order ID in context
-    set_last_context(user_id, {
-        "action": "checkout",
-        "order_id": order["order_id"]
-    })
+#     # Store order ID in context
+#     set_last_context(user_id, {
+#         "action": "checkout",
+#         "order_id": order["order_id"]
+#     })
     
-    # Present payment options
-    from config import MOCK_PAYMENT_ACCOUNTS
+#     # Present payment options
+#     from config import MOCK_PAYMENT_ACCOUNTS
     
-    # Create sections for the list message
-    sections = []
+#     # Create sections for the list message
+#     sections = []
     
-    # Add saved mobile money accounts section if available
-    if MOCK_PAYMENT_ACCOUNTS:
-        saved_accounts_rows = []
-        for account in MOCK_PAYMENT_ACCOUNTS:
-            saved_accounts_rows.append({
-                "id": f"payment_momo_{account['id']}",
-                "title": f"{account['network']} - {account['number']}",
-                "description": f"{'(Default)' if account['is_default'] else ''}"
-            })
+#     # Add saved mobile money accounts section if available
+#     if MOCK_PAYMENT_ACCOUNTS:
+#         saved_accounts_rows = []
+#         for account in MOCK_PAYMENT_ACCOUNTS:
+#             saved_accounts_rows.append({
+#                 "id": f"payment_momo_{account['id']}",
+#                 "title": f"{account['network']} - {account['number']}",
+#                 "description": f"{'(Default)' if account['is_default'] else ''}"
+#             })
         
-        sections.append({
-            "title": "Saved Payment Accounts",
-            "rows": saved_accounts_rows
-        })
+#         sections.append({
+#             "title": "Saved Payment Accounts",
+#             "rows": saved_accounts_rows
+#         })
     
-    # Add other options section
-    other_options_rows = [
-        {
-            "id": "payment_new_momo", 
-            "title": "Add Payment Account", 
-            "description": "Pay with a different mobile money account"
-        },
-        {
-            "id": "payment_cod", 
-            "title": "Cash on Delivery", 
-            "description": "Pay when you receive your order"
-        }
-    ]
+#     # Add other options section
+#     other_options_rows = [
+#         {
+#             "id": "payment_new_momo", 
+#             "title": "Add Payment Account", 
+#             "description": "Pay with a different mobile money account"
+#         },
+#         {
+#             "id": "payment_cod", 
+#             "title": "Cash on Delivery", 
+#             "description": "Pay when you receive your order"
+#         }
+#     ]
     
-    sections.append({
-        "title": "Other Payment Options",
-        "rows": other_options_rows
-    })
+#     sections.append({
+#         "title": "Other Payment Options",
+#         "rows": other_options_rows
+#     })
     
-    send_list_message(
-        user_id,
-        "Choose Payment Method",
-        f"Order #{order['order_id']} - Total: GHS{order['total']:.2f}",
-        "Select Payment",
-        sections
-    )
+#     send_list_message(
+#         user_id,
+#         "Choose Payment Method",
+#         f"Order #{order['order_id']} - Total: GHS{order['total']:.2f}",
+#         "Select Payment",
+#         sections
+#     )
     
-    # Set current action
-    set_current_action(user_id, "awaiting_payment_method")
+#     # Set current action
+#     set_current_action(user_id, "awaiting_payment_method")
     
-    return True
+#     return True
 
 def handle_payment_selection(user_id, payment_method):
     """Handle payment method selection"""

@@ -28,30 +28,51 @@ PORT = int(os.getenv("PORT", "5000"))
 sessions = {}
 orders = []
 product_cache = {}
+
+
+# Inventory management settings
+INVENTORY_CACHE_DURATION_MINUTES = 30
+INVENTORY_CHECK_ENABLED = True
+DEFAULT_STOCK_QUANTITY = 7  # Default when inventory data is unavailable
+
+# Add inventory cache to the in-memory storage section
+inventory_cache = {}
+inventory_cache_updated = None
+
+# Update the existing sessions dictionary to support inventory decisions
+# Add this to the session initialization in models/session.py:
+# "inventory_results": None,  # Store inventory check results
+# "awaiting_inventory_decision": False,  # Track if waiting for inventory decision
+
+# Sample inventory data for testing (can be removed in production)
+MOCK_INVENTORY_DATA = {
+    "29731645503115608": {"stock_quantity": 15, "stock_status": "in_stock"},
+    "9754687801263091": {"stock_quantity": 3, "stock_status": "low_stock"}, 
+    "9715602025185036": {"stock_quantity": 0, "stock_status": "out_of_stock"},
+    "9536779646410457": {"stock_quantity": 8, "stock_status": "in_stock"},
+    "9610090482419920": {"stock_quantity": 1, "stock_status": "low_stock"},
+    "29392834080360744": {"stock_quantity": 22, "stock_status": "in_stock"},
+    "29180309118279910": {"stock_quantity": 0, "stock_status": "out_of_stock"},
+    "9560808797375497": {"stock_quantity": 12, "stock_status": "in_stock"},
+    "29239261912387560": {"stock_quantity": 2, "stock_status": "low_stock"},
+    "29368899942725277": {"stock_quantity": 18, "stock_status": "in_stock"},
+    "30331860066413533": {"stock_quantity": 5, "stock_status": "low_stock"},
+    "9130680133704059": {"stock_quantity": 0, "stock_status": "out_of_stock"},
+    "23939808892293564": {"stock_quantity": 25, "stock_status": "in_stock"},
+    "9674011849346532": {"stock_quantity": 7, "stock_status": "in_stock"},
+    "10098437960190250": {"stock_quantity": 1, "stock_status": "low_stock"},
+    "29934692319448320": {"stock_quantity": 10, "stock_status": "in_stock"},
+    "29721762554073939": {"stock_quantity": 4, "stock_status": "low_stock"},
+    "9533864750054764": {"stock_quantity": 6, "stock_status": "in_stock"},
+    "29767553459502718": {"stock_quantity": 0, "stock_status": "out_of_stock"}
+}
+
 category_cache = {
     "Dry Spices": ["29731645503115608", "9754687801263091", "9715602025185036", "9536779646410457", "9610090482419920", "29392834080360744", "29180309118279910", "9560808797375497", "29239261912387560", "29368899942725277"],
     "Wet Spices": ["30331860066413533", "9130680133704059", "23939808892293564", "9674011849346532", "10098437960190250"], 
     # "Herb Spices": [],
 }
 
-# category_cache = {
-#     "Dry Spices": ["1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487"],
-#     "Wet Spices": ["1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487", "1220367125959487"], 
-#     # "Herb Spices": [],
-# }
-# category_cache = {}
-# category_cache = {
-#     "electronics": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "clothing": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "home": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "books": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "sports": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "beauty": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "toys": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "grocery": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "automotive": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"],
-#     "garden": ["9686994108029742","10029798880373213","9405022489615254","9019634074831244","9874487352584680","10077300928955678"]
-# }
 
 product_options_cache = {
     "29731645503115608": ["29934692319448320", "29721762554073939", "29767553459502718", "9533864750054764"],

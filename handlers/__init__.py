@@ -30,7 +30,10 @@ from handlers.checkout import (
     handle_shipping_location,
     handle_delivery_instructions,
     handle_save_address_decision,
-    handle_existing_address_selection
+    handle_existing_address_selection,
+    # NEW: Add inventory-related handlers
+    handle_proceed_with_available,
+    handle_cancel_inventory_order
 )
 from handlers.order import (
     handle_order_status,
@@ -81,20 +84,18 @@ interaction_handlers = {
     "checkout": handle_checkout,
     "confirm_checkout": handle_confirm_checkout,
     
+    # NEW: Inventory decision handlers
+    "proceed_with_available": handle_proceed_with_available,
+    "cancel_inventory_order": handle_cancel_inventory_order,
+    
     # Mobile Money payment options
-    # "payment_new_momo": handle_new_momo_request,
-    # Updated code
     "payment_new_momo": lambda user_id: handle_new_momo_request(user_id, get_last_context(user_id).get("order_id", "")),
     "payment_cod": lambda user_id: handle_payment_selection(user_id, "payment_cod"),
     
     # Shipping options
-    # "shipping_new_address": lambda user_id: handle_shipping_selection(user_id, "shipping_new_address"),
-    # "shipping_location": lambda user_id: handle_shipping_selection(user_id, "shipping_location"),
     "shipping_new_address": lambda user_id: handle_shipping_selection(user_id, "shipping_new_address"),
     "shipping_location": lambda user_id: handle_shipping_selection(user_id, "shipping_location"),
     "shipping_pickup": lambda user_id: handle_shipping_selection(user_id, "shipping_pickup"),
-
-
 
     # Support options
     "support": handle_support,
